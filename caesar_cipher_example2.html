@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>カエサル暗号の解読</title>
+  <link href="css/style.css" rel="stylesheet"/>
+</head>
+<body>
+  <main class="container">
+    <header class="page-header">
+      <h1>カエサル暗号の解読</h1>
+      <p class="description">
+        <strong>カエサル円盤の使い方</strong><br/>
+        外側の円盤文字は平文のアルファベット，内側の円盤文字は暗号文のアルファベットに対応します．
+        内側の円盤をドラッグして回し，復号ボタンを押して結果を確認します．
+      </p>
+    </header>
+
+    <section class="card center">
+      <div class="disk-container">
+        <canvas id="canvas" width="460" height="460" aria-label="内側の円盤をドラッグして回転させるカエサル円盤"></canvas>
+      </div>
+      <div class="drag-hint">内側の円盤に指を置いて，そのまま回してください</div>
+      <div class="correspondence" aria-live="polite">
+        <span class="plain-a">平文 A</span>
+        <span class="correspondence-arrow">↔</span>
+        <span>暗号文 <span class="cipher-letter" id="cipherForA">A</span></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="output-box cipher-challenge" id="cipherText">暗号文：<span class="cipher-value">CQRB RB J YNW.</span></div>
+      <div class="button-row">
+        <button type="button" id="decryptButton">復号</button>
+      </div>
+      <div class="output-box" id="output" aria-live="polite">
+        <div id="decText"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const cx = 230;
+    const cy = 230;
+    const stepAngle = 2 * Math.PI / 26;
+    const challenge = "CQRB RB J YNW.";
+    let shift = 0;
+    let dragState = null;
+
+    function mod26(n) {
+      return ((n % 26) + 26) % 26;
+    }
+
+    function normalizeAngle(angle) {
+      while (angle > Math.PI) angle -= 2 * Math.PI;
+      while (angle < -Math.PI) angle += 2 * Math.PI;
+      return angle;
+    }
+
+    function drawDisk() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 200, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      for (let i = 0; i < 26; i++) {
+        const angle = i * stepAngle - Math.PI / 2;
+        const x = cx + 180 * Math.cos(angle);
+        const y = cy + 180 * Math.sin(angle);
+        ctx.fillStyle = "#000";
+        ctx.font = "24px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(alphabet[i], x, y);
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 160, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      for (let i = 0; i < 26; i++) {
+        const angle = i * stepAngle - shift * stepAngle - Math.PI / 2;
+        const x = cx + 140 * Math.cos(angle);
+        const y = cy + 140 * Math.sin(angle);
+        ctx.fillStyle = "#ff4b00";
+        ctx.font = i === shift ? "bold 34px sans-serif" : "24px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(alphabet[i], x, y);
+      }
+
+      document.getElementById("info").textContent = `k = ${shift}`;
+      document.getElementById("cipherForA").textContent = alphabet[shift];
+    }
+
+    function pointerPosition(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) * canvas.width / rect.width,
+        y: (event.clientY - rect.top) * canvas.height / rect.height
+      };
+    }
+
+    function pointerAngle(event) {
+      const p = pointerPosition(event);
+      return {
+        angle: Math.atan2(p.y - cy, p.x - cx),
+        distance: Math.hypot(p.x - cx, p.y - cy)
+      };
+    }
+
+    canvas.addEventListener("pointerdown", event => {
+      const p = pointerAngle(event);
+      if (p.distance < 25 || p.distance > 165) return;
+      dragState = {
+        pointerId: event.pointerId,
+        startShift: shift,
+        lastAngle: p.angle,
+        accumulatedAngle: 0
+      };
+      canvas.setPointerCapture(event.pointerId);
+      canvas.classList.add("dragging");
+      event.preventDefault();
+    });
+
+    canvas.addEventListener("pointermove", event => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const p = pointerAngle(event);
+      if (p.distance < 20) return;
+
+      const delta = normalizeAngle(p.angle - dragState.lastAngle);
+      dragState.accumulatedAngle += delta;
+      dragState.lastAngle = p.angle;
+
+      const visualSteps = Math.round(dragState.accumulatedAngle / stepAngle);
+      shift = mod26(dragState.startShift - visualSteps);
+      drawDisk();
+      event.preventDefault();
+    });
+
+    function endDrag(event) {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      dragState = null;
+      canvas.classList.remove("dragging");
+    }
+
+    canvas.addEventListener("pointerup", endDrag);
+    canvas.addEventListener("pointercancel", endDrag);
+
+    function shiftChar(char, amount) {
+      const u = char.toUpperCase();
+      const i = alphabet.indexOf(u);
+      if (i === -1) return char;
+      return alphabet[mod26(i + amount)];
+    }
+
+    function decrypt() {
+      const plain = [...challenge].map(c => shiftChar(c, -shift)).join("");
+      document.getElementById("decText").textContent = "復号結果：" + plain;
+    }
+
+    document.getElementById("decryptButton").addEventListener("click", decrypt);
+    drawDisk();
+  </script>
+</body>
+</html>

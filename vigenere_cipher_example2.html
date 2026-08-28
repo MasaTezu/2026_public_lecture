@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ビジュネル暗号の解読</title>
+  <link href="css/style.css" rel="stylesheet"/>
+</head>
+<body class="container-wide">
+  <main class="container">
+    <header class="page-header">
+      <h1>ビジュネル暗号の解読</h1>
+      <p class="description">
+        3つのカエサル円盤の内側を指で回して鍵を設定し，暗号文を復号します．
+      </p>
+    </header>
+
+    <section class="card center">
+      <div class="drag-hint vigenere-hint">それぞれの円盤の内側に指を置いて，そのまま回してください</div>
+      <div class="vigenere-disk-grid">
+        <div class="vigenere-disk-panel">
+          <canvas id="disk0" class="vigenere-disk-canvas" width="300" height="300" aria-label="1つ目のカエサル円盤。内側をドラッグして回転"></canvas>
+          <div class="correspondence compact" aria-live="polite">
+            <span class="plain-a">平文 A</span>
+            <span class="correspondence-arrow">↔</span>
+            <span>暗号文 <span class="corr-letter c0" id="corr0">A</span></span>
+          </div>
+        </div>
+
+        <div class="vigenere-disk-panel">
+          <canvas id="disk1" class="vigenere-disk-canvas" width="300" height="300" aria-label="2つ目のカエサル円盤。内側をドラッグして回転"></canvas>
+          <div class="correspondence compact" aria-live="polite">
+            <span class="plain-a">平文 A</span>
+            <span class="correspondence-arrow">↔</span>
+            <span>暗号文 <span class="corr-letter c1" id="corr1">A</span></span>
+          </div>
+        </div>
+
+        <div class="vigenere-disk-panel">
+          <canvas id="disk2" class="vigenere-disk-canvas" width="300" height="300" aria-label="3つ目のカエサル円盤。内側をドラッグして回転"></canvas>
+          <div class="correspondence compact" aria-live="polite">
+            <span class="plain-a">平文 A</span>
+            <span class="correspondence-arrow">↔</span>
+            <span>暗号文 <span class="corr-letter c2" id="corr2">A</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="output-box cipher-challenge" id="cipherText"></div>
+      <div class="button-row">
+        <button type="button" id="decryptButton">復号</button>
+      </div>
+      <div class="output-box large-output" id="output" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <script>
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const colors = ["#ff4b00", "#1e90ff", "#00a000"];
+    const canvases = [
+      document.getElementById("disk0"),
+      document.getElementById("disk1"),
+      document.getElementById("disk2")
+    ];
+    const contexts = canvases.map(c => c.getContext("2d"));
+    const challenge = "WVOV WY D GKFFKW AKVGGJS. CH IYH HNH GGPS QHM GJOOQ OTG OMDWT. FOT BCA USGG HNH AKVGGJS?";
+    const stepAngle = 2 * Math.PI / 26;
+    let rotation = [0, 0, 0];
+    const dragStates = [null, null, null];
+
+    function mod26(n) {
+      return ((n % 26) + 26) % 26;
+    }
+
+    function normalizeAngle(angle) {
+      while (angle > Math.PI) angle -= 2 * Math.PI;
+      while (angle < -Math.PI) angle += 2 * Math.PI;
+      return angle;
+    }
+
+    function drawDisk(ctx, rot, color) {
+      const cx = 150;
+      const cy = 150;
+      const ROuter = 140;
+      const RInner = 110;
+
+      ctx.clearRect(0, 0, 300, 300);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, ROuter, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      for (let i = 0; i < 26; i++) {
+        const angle = i * stepAngle - Math.PI / 2;
+        const x = cx + (ROuter - 15) * Math.cos(angle);
+        const y = cy + (ROuter - 15) * Math.sin(angle);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle + Math.PI / 2);
+        ctx.fillStyle = "#000";
+        ctx.font = "20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(alphabet[i], 0, 0);
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, RInner, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      for (let i = 0; i < 26; i++) {
+        const angle = i * stepAngle - rot * stepAngle - Math.PI / 2;
+        const x = cx + (RInner - 15) * Math.cos(angle);
+        const y = cy + (RInner - 15) * Math.sin(angle);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle + Math.PI / 2);
+        ctx.fillStyle = color;
+        ctx.font = i === rot ? "bold 28px sans-serif" : "18px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(alphabet[i], 0, 0);
+        ctx.restore();
+      }
+    }
+
+    function drawAll() {
+      for (let i = 0; i < 3; i++) {
+        drawDisk(contexts[i], rotation[i], colors[i]);
+        document.getElementById(`corr${i}`).textContent = alphabet[rotation[i]];
+      }
+      document.getElementById("keyDisplay").textContent =
+        "鍵：" + rotation.map(r => alphabet[r]).join("");
+    }
+
+    function pointerInfo(canvas, event) {
+      const rect = canvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * canvas.width / rect.width;
+      const y = (event.clientY - rect.top) * canvas.height / rect.height;
+      const dx = x - 150;
+      const dy = y - 150;
+      return {
+        angle: Math.atan2(dy, dx),
+        distance: Math.hypot(dx, dy)
+      };
+    }
+
+    function setupDrag(canvas, index) {
+      canvas.addEventListener("pointerdown", event => {
+        const p = pointerInfo(canvas, event);
+        if (p.distance < 20 || p.distance > 118) return;
+
+        dragStates[index] = {
+          pointerId: event.pointerId,
+          startShift: rotation[index],
+          lastAngle: p.angle,
+          accumulatedAngle: 0
+        };
+        canvas.setPointerCapture(event.pointerId);
+        canvas.classList.add("dragging");
+        event.preventDefault();
+      });
+
+      canvas.addEventListener("pointermove", event => {
+        const state = dragStates[index];
+        if (!state || state.pointerId !== event.pointerId) return;
+
+        const p = pointerInfo(canvas, event);
+        if (p.distance < 16) return;
+
+        const delta = normalizeAngle(p.angle - state.lastAngle);
+        state.accumulatedAngle += delta;
+        state.lastAngle = p.angle;
+
+        const visualSteps = Math.round(state.accumulatedAngle / stepAngle);
+        rotation[index] = mod26(state.startShift - visualSteps);
+        drawAll();
+        event.preventDefault();
+      });
+
+      function endDrag(event) {
+        const state = dragStates[index];
+        if (!state || state.pointerId !== event.pointerId) return;
+        if (canvas.hasPointerCapture(event.pointerId)) {
+          canvas.releasePointerCapture(event.pointerId);
+        }
+        dragStates[index] = null;
+        canvas.classList.remove("dragging");
+      }
+
+      canvas.addEventListener("pointerup", endDrag);
+      canvas.addEventListener("pointercancel", endDrag);
+    }
+
+    function shiftChar(c, amount) {
+      if (!/[A-Z]/.test(c)) return c;
+      return String.fromCharCode(mod26(c.charCodeAt(0) - 65 + amount) + 65);
+    }
+
+    function makeColoredText(text) {
+      let res = "";
+      let j = 0;
+      for (const c of text) {
+        if (/[A-Z]/i.test(c)) {
+          const disk = j % 3;
+          res += `<span class="c${disk}">${c.toUpperCase()}</span>`;
+          j++;
+        } else {
+          res += c;
+        }
+      }
+      return res;
+    }
+
+    function process(text) {
+      let res = "";
+      let j = 0;
+      for (const raw of text) {
+        const c = raw.toUpperCase();
+        if (/[A-Z]/.test(c)) {
+          const disk = j % 3;
+          res += shiftChar(c, -rotation[disk]);
+          j++;
+        } else {
+          res += c;
+        }
+      }
+      return res;
+    }
+
+    function decrypt() {
+      const plainText = process(challenge);
+      document.getElementById("output").innerHTML =
+        `<div><span class="label">復号結果：</span><span class="plain">${plainText}</span></div>`;
+    }
+
+    canvases.forEach((canvas, index) => setupDrag(canvas, index));
+    document.getElementById("decryptButton").addEventListener("click", decrypt);
+    document.getElementById("cipherText").innerHTML = "暗号文：" + makeColoredText(challenge);
+    drawAll();
+  </script>
+</body>
+</html>
