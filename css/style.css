@@ -66,7 +66,7 @@ body.container-wide .container{
 }
 
 .page-header{
-  text-align:center;
+  text-align:left;
   margin-bottom:28px;
 }
 
@@ -91,7 +91,7 @@ p{
 }
 
 .description{
-  margin:0 auto 24px;
+  margin:0 0 24px;
   max-width:820px;
 }
 
