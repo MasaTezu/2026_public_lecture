@@ -709,4 +709,11 @@ canvas{
   .key-summary{
     font-size:28px;
   }
+
+  .disk-container{
+    transform:scale(.78);
+    transform-origin:top center;
+
+    height:360px;
+  }
 }
